@@ -1,0 +1,158 @@
+/* AI Forge panel */
+.icon-settings-forge {
+  width: 46px;
+  height: 46px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  font: bold 15px/1 monospace;
+  color: #fff;
+  letter-spacing: 1px;
+}
+.icon-settings-forge::after {
+  content: "AI";
+  pointer-events: none;
+}
+.has-expanded-drawer.icon-settings-forge,
+.icon-settings-forge:hover {
+  color: gold;
+}
+
+.settings-section-forge {
+  max-height: 530px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.settings-section-forge .forge-row select {
+  min-width: 0;
+}
+.forge-status {
+  font-size: 11px;
+  color: #aaa;
+  margin: 0 0 8px;
+}
+.forge-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.forge-tab {
+  flex: 1;
+  background: #3a3a3a;
+  color: #ccc;
+  border: 1px solid #555;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 11px;
+}
+.forge-tab.selected {
+  background: gold;
+  color: #222;
+  border-color: gold;
+}
+.forge-pane.hidden {
+  display: none;
+}
+.settings-section-forge textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+.forge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0;
+}
+.forge-row label {
+  width: 52px;
+  color: #bbb;
+}
+.forge-row select {
+  flex: 1;
+}
+.forge-row input[type="number"] {
+  width: 56px;
+}
+.forge-help {
+  color: #aaa;
+  font-size: 12px;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+.settings-section-forge .button-primary {
+  width: 100%;
+  margin-top: 8px;
+}
+.settings-section-forge .checkbox-container {
+  display: block;
+  margin: 3px 0;
+}
+.forge-results,
+.forge-library {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.forge-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 10px;
+  color: #aaa;
+  cursor: pointer;
+}
+.forge-thumb img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: repeating-conic-gradient(#555 0% 25%, #444 0% 50%) 50% / 12px 12px;
+  border: 1px solid #555;
+}
+.forge-thumb img:hover {
+  border-color: gold;
+}
+.forge-log {
+  margin-top: 10px;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 11px;
+  color: #9c9;
+  white-space: pre-wrap;
+  background: #1c1c1c;
+  padding: 6px;
+}
+.forge-log:empty {
+  display: none;
+}
+
+.forge-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.forge-assets .forge-thumb img {
+  width: 48px;
+  height: 48px;
+}
+.settings-section-forge .forge-project-path,
+.settings-section-forge .forge-asset-filter {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+}
+.settings-section-forge .forge-learn {
+  width: 100%;
+  margin: 6px 0;
+}
+.forge-subtitle {
+  margin-top: 12px;
+}

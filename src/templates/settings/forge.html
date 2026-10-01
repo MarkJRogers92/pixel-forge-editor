@@ -1,0 +1,126 @@
+<script type="text/html" id="templates/settings/forge.html">
+  <div class="settings-section settings-section-forge">
+    <div class="settings-title">AI Forge</div>
+    <div class="forge-status">Checking Claude connection…</div>
+
+    <div class="forge-tabs">
+      <button type="button" class="forge-tab selected" data-forge-tab="create">Create</button>
+      <button type="button" class="forge-tab" data-forge-tab="refine">Refine</button>
+      <button type="button" class="forge-tab" data-forge-tab="pixelize">Pixelize</button>
+      <button type="button" class="forge-tab" data-forge-tab="library">Assets</button>
+    </div>
+
+    <!-- CREATE -->
+    <div class="settings-item forge-pane" data-forge-pane="create">
+      <textarea class="textfield forge-prompt" rows="4"
+        placeholder="Describe the sprite, e.g. a battered cream 1994 mall payphone with a frayed handset cord, 3/4 top-down view"></textarea>
+      <div class="forge-row">
+        <label>Size</label>
+        <input type="number" class="textfield forge-w" min="4" max="256" value="32"/>
+        <span>×</span>
+        <input type="number" class="textfield forge-h" min="4" max="256" value="32"/>
+        <button type="button" class="button forge-use-canvas-size" title="Use current canvas size">canvas</button>
+      </div>
+      <div class="forge-row">
+        <label>Style</label>
+        <select class="forge-profile"><option value="">(none)</option></select>
+      </div>
+      <div class="forge-row">
+        <label>Review</label>
+        <select class="forge-rounds">
+          <option value="0">0 – draft only (fast)</option>
+          <option value="1">1 round</option>
+          <option value="2" selected>2 rounds</option>
+          <option value="3">3 rounds (best)</option>
+        </select>
+      </div>
+      <div class="forge-row">
+        <label>Drafts</label>
+        <select class="forge-candidates">
+          <option value="1">1 (fastest)</option>
+          <option value="3" selected>3, judge picks best</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+      <div class="forge-row">
+        <label>Artist</label>
+        <select class="forge-artist"></select>
+      </div>
+      <div class="forge-row">
+        <label>Model</label>
+        <select class="forge-model">
+          <option value="">default</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="fable">Fable</option>
+        </select>
+      </div>
+      <p class="forge-help forge-model-help">Model names apply to Claude; leave "default" for GPT.</p>
+      <div class="forge-row">
+        <label>Result</label>
+        <select class="forge-target">
+          <option value="new">Open as new sprite</option>
+          <option value="layer">Add as new layer</option>
+        </select>
+      </div>
+      <button type="button" class="button button-primary forge-generate">Generate</button>
+    </div>
+
+    <!-- REFINE -->
+    <div class="settings-item forge-pane hidden" data-forge-pane="refine">
+      <p class="forge-help">The artist looks at the current frame and changes it. The result is added as a new layer, so your original stays intact.</p>
+      <textarea class="textfield forge-refine-prompt" rows="3"
+        placeholder="e.g. make the cord more frayed, add a coin slot, darker shadows on the right"></textarea>
+      <button type="button" class="button button-primary forge-refine">Refine current frame</button>
+    </div>
+
+    <!-- PIXELIZE -->
+    <div class="settings-item forge-pane hidden" data-forge-pane="pixelize">
+      <p class="forge-help">Turn any image (AI output, photo, sketch, blurry upscale) into real pixel art. Uses the image you pick, or the current frame.</p>
+      <input type="file" class="forge-file" accept="image/*"/>
+      <div class="forge-row">
+        <label>Conversion</label>
+        <select class="forge-px-preset">
+          <option value="standard">Standard pixel cleanup</option>
+          <option value="illustration">GPT image / illustration</option>
+        </select>
+      </div>
+      <p class="forge-help">For detailed images, use GPT image / illustration to keep highlights, reduce speckle and clean outlines while shrinking. Small details may still need a redraw at game size.</p>
+      <div class="forge-row">
+        <label>Size</label>
+        <input type="number" class="textfield forge-px-w" min="4" max="256" placeholder="auto"/>
+        <span>×</span>
+        <input type="number" class="textfield forge-px-h" min="4" max="256" placeholder="auto"/>
+      </div>
+      <div class="forge-row">
+        <label>Colours</label>
+        <input type="number" class="textfield forge-px-colors" min="2" max="64" value="16"/>
+      </div>
+      <label class="checkbox-container"><input type="checkbox" class="forge-px-palette"/> <span>Snap to style palette</span></label>
+      <label class="checkbox-container"><input type="checkbox" class="forge-px-grid" checked/> <span>Detect fake pixel grid</span></label>
+      <label class="checkbox-container"><input type="checkbox" class="forge-px-bg" checked/> <span>Remove background</span></label>
+      <label class="checkbox-container"><input type="checkbox" class="forge-px-orphans"/> <span>Remove stray pixels</span></label>
+      <button type="button" class="button button-primary forge-pixelize">Pixelize</button>
+    </div>
+
+    <!-- LIBRARY -->
+    <div class="settings-item forge-pane hidden" data-forge-pane="library">
+      <div class="forge-row">
+        <label>Project</label>
+        <select class="forge-project"><option value="">(choose)</option></select>
+      </div>
+      <div class="forge-row">
+        <input type="text" class="textfield forge-project-path" placeholder="/path/to/game/assets"/>
+        <button type="button" class="button forge-project-add">Add</button>
+      </div>
+      <button type="button" class="button forge-learn">Learn style from this project</button>
+      <input type="text" class="textfield forge-asset-filter" placeholder="filter, e.g. props"/>
+      <div class="forge-assets"></div>
+      <div class="settings-title forge-subtitle">Forge library</div>
+      <div class="forge-library"></div>
+    </div>
+
+    <div class="forge-results"></div>
+    <pre class="forge-log"></pre>
+  </div>
+</script>
