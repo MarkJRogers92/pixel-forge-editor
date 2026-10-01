@@ -114,6 +114,21 @@
     });
   }
 
+  // `?open=<library id>` (forge open ID --editor piskel): once Piskel is up, load that
+  // result as a new sprite. Runs at page load, not when the AI panel is first opened.
+  (function openFromUrl() {
+    var openId = new URLSearchParams(window.location.search).get("open");
+    if (!openId) return;
+    var tries = 0;
+    var timer = window.setInterval(function () {
+      tries++;
+      var ready = window.pskl && pskl.app && pskl.app.piskelController && pskl.app.importService;
+      if (!ready && tries < 100) return;
+      window.clearInterval(timer);
+      if (ready) applyImage("/api/library/" + encodeURIComponent(openId) + "/sprite.png", "new", openId);
+    }, 100);
+  })();
+
   ns.ForgeController = function (piskelController) {
     this.piskelController = piskelController;
   };
@@ -172,6 +187,7 @@
 
     this.loadStatus_();
     this.render_();
+
     var self = this;
     this.ticker = window.setInterval(function () {
       self.render_();
