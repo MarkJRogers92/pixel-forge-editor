@@ -16,6 +16,7 @@ exports.styles = [
   "css/settings-import.css",
   "css/settings-resize.css",
   "css/settings-save.css",
+  "css/settings-forge.css",
   "css/tools.css",
   "css/icons.css",
   "css/color-picker-slider.css",

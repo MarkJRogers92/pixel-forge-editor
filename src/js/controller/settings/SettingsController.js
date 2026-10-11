@@ -2,6 +2,10 @@
   var ns = $.namespace("pskl.controller.settings");
 
   var settings = {
+    forge: {
+      template: "templates/settings/forge.html",
+      controller: ns.ForgeController
+    },
     user: {
       template: "templates/settings/preferences.html",
       controller: ns.PreferencesController
