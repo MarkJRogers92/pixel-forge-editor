@@ -1,11 +1,13 @@
-/* @file AI Forge panel: Claude-driven sprite generation, refinement and pixelization.
+/* @file AI Forge panel: sprite generation, refinement and pixelization.
  * Talks to the local Pixel Forge server (/api/*) that also serves this editor. */
 (function () {
   var ns = $.namespace("pskl.controller.settings");
 
   // Survives the drawer being closed/reopened (controllers are recreated each time).
-  var state = { job: null, log: [], results: [], busy: false, status: null, prefs: {} };
+  var state = { job: null, log: [], results: [], busy: false, status: null, prefs: {}, workflow: null, controller: null };
   var PREFS_KEY = "pixelforge.prefs";
+  var WORKFLOW_KEY = "pixelforge.active-workflow";
+  var WORKFLOW_HISTORY_KEY = "pixelforge.last-workflow";
   try {
     state.prefs = JSON.parse(window.localStorage.getItem(PREFS_KEY) || "{}");
   } catch (e) {
@@ -26,7 +28,10 @@
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || j.error) {
-          throw new Error(j.error || "HTTP " + r.status);
+          var error = new Error(j.error || "HTTP " + r.status);
+          error.status = r.status;
+          error.body = j;
+          throw error;
         }
         return j;
       });
@@ -148,12 +153,17 @@
     this.resultsEl = q(".forge-results");
     this.libraryEl = q(".forge-library");
     this.assetsEl = q(".forge-assets");
+    state.controller = this;
 
     var tabs = document.querySelectorAll(".settings-section-forge .forge-tab");
     for (var i = 0; i < tabs.length; i++) {
       this.addEventListener(tabs[i], "click", this.onTab_);
     }
     this.addEventListener(q(".forge-generate"), "click", this.onGenerate_);
+    this.addEventListener(q(".forge-mode"), "change", this.onModeChange_);
+    this.addEventListener(q(".forge-workflow-cancel"), "click", this.onWorkflowCancel_);
+    this.addEventListener(q(".forge-workflow-open"), "click", this.onWorkflowOpen_);
+    this.addEventListener(q(".forge-workflow-retry"), "click", this.onWorkflowRetry_);
     this.addEventListener(q(".forge-refine"), "click", this.onRefine_);
     this.addEventListener(q(".forge-pixelize"), "click", this.onPixelize_);
     this.addEventListener(q(".forge-use-canvas-size"), "click", this.onCanvasSize_);
@@ -184,8 +194,31 @@
     if (p.target) q(".forge-target").value = p.target;
     if (p.candidates) q(".forge-candidates").value = p.candidates;
     if (p.prompt) q(".forge-prompt").value = p.prompt;
+    if (p.checks) q(".forge-checks").value = p.checks;
+    if (p.mode) q(".forge-mode").value = p.mode;
+    this.updateMode_();
+
+    try {
+      var savedWorkflow = JSON.parse(
+        window.localStorage.getItem(WORKFLOW_KEY) ||
+        window.localStorage.getItem(WORKFLOW_HISTORY_KEY) ||
+        "null"
+      );
+      if (savedWorkflow && savedWorkflow.request_id) {
+        state.workflowId = savedWorkflow.request_id;
+        state.workflowPayload = savedWorkflow.payload || null;
+        if (savedWorkflow.terminal) state.workflow = savedWorkflow.terminal;
+        state.busy = !!(savedWorkflow.terminal && isWorkflowActive(savedWorkflow.terminal.state)) || !savedWorkflow.terminal;
+      }
+    } catch (e) {}
 
     this.loadStatus_();
+    if (state.workflowId && !(savedWorkflow && savedWorkflow.local_terminal)) {
+      // Set synchronously before render_ so Generate cannot race recovery.
+      state.busy = true;
+      pollWorkflow(state.workflowId, true);
+    }
+    renderWorkflow();
     this.render_();
 
     var self = this;
@@ -196,8 +229,218 @@
 
   ns.ForgeController.prototype.destroy = function () {
     window.clearInterval(this.ticker);
+    if (state.controller === this) state.controller = null;
     this.superclass.destroy.call(this);
   };
+
+  ns.ForgeController.prototype.onModeChange_ = function () {
+    state.prefs.mode = this.q(".forge-mode").value;
+    savePrefs();
+    this.updateMode_();
+  };
+
+  ns.ForgeController.prototype.updateMode_ = function () {
+    var mode = this.q(".forge-mode").value === "competition" ? "competition" : "prepare";
+    this.q(".forge-mode").value = mode;
+    var section = document.querySelector(".settings-section-forge");
+    section.classList.toggle("forge-mode-prepare", mode === "prepare");
+    section.classList.toggle("forge-mode-competition", mode === "competition");
+  };
+
+  ns.ForgeController.prototype.onWorkflowCancel_ = function () {
+    var id = state.workflowId;
+    if (!id || !state.workflow || !isWorkflowActive(state.workflow.state)) return;
+    state.workflowCancelError = "";
+    api("POST", "workflows/" + encodeURIComponent(id) + "/cancel", {})
+      .then(function (r) {
+        state.workflow = r;
+        pollWorkflow(id, false);
+      })
+      .catch(function (e) {
+        state.workflowCancelError = "Could not cancel yet: " + e.message;
+        renderWorkflow();
+      });
+    renderWorkflow();
+  };
+
+  ns.ForgeController.prototype.onWorkflowOpen_ = function () {
+    var result = state.workflow && state.workflow.result;
+    if (!result || !result.png) return;
+    applyImage(result.png, "new", result.library_id || "Pixel Forge result").then(function () {
+      notify("Opened the final sprite as a new image");
+    }).catch(function () {
+      notify("Could not open the final sprite");
+    });
+  };
+
+  ns.ForgeController.prototype.onWorkflowRetry_ = function () {
+    if (!state.workflowId || !state.workflowPayload || !state.workflow || state.workflow.state !== "missing") return;
+    submitWorkflow(state.workflowId, state.workflowPayload);
+  };
+
+  function isWorkflowActive(status) {
+    return status === "starting" || status === "running" || status === "cancelling";
+  }
+
+  function persistWorkflowRecord(id, payload, terminal, localTerminal) {
+    state.workflowId = id;
+    try {
+      var record = JSON.stringify({
+        request_id: id,
+        payload: payload || state.workflowPayload || null,
+        terminal: terminal || null,
+        local_terminal: !!localTerminal
+      });
+      if (terminal && !isWorkflowActive(terminal.state)) {
+        window.localStorage.removeItem(WORKFLOW_KEY);
+        window.localStorage.setItem(WORKFLOW_HISTORY_KEY, record);
+      } else {
+        window.localStorage.setItem(WORKFLOW_KEY, record);
+        window.localStorage.removeItem(WORKFLOW_HISTORY_KEY);
+      }
+    } catch (e) {}
+  }
+
+  function pollWorkflow(id, immediate) {
+    if (state.workflowPolling) return;
+    state.workflowPolling = true;
+    function tick() {
+      api("GET", "workflows/" + encodeURIComponent(id))
+        .then(function (workflow) {
+          state.workflow = workflow;
+          state.workflowPayload = state.workflowPayload || null;
+          state.workflowError = "";
+          state.busy = isWorkflowActive(workflow.state);
+          persistWorkflowRecord(id, state.workflowPayload, state.busy ? null : workflow, false);
+          renderWorkflow();
+          if (state.busy) {
+            state.workflowTimer = window.setTimeout(tick, 1500);
+          } else {
+            state.workflowPolling = false;
+          }
+        })
+        .catch(function (e) {
+          if (e.status === 404) {
+            state.busy = false;
+            state.workflow = {
+              request_id: id,
+              state: "missing",
+              log: "Forge cannot find this request. Retry this same request ID to recover safely."
+            };
+            state.workflowError = "";
+            state.workflowPolling = false;
+            persistWorkflowRecord(id, state.workflowPayload, state.workflow, true);
+            renderWorkflow();
+            return;
+          }
+          if (e.status === 400) {
+            state.busy = false;
+            state.workflow = {
+              request_id: id,
+              state: "failed",
+              log: "Forge rejected this request ID. Start a new request to continue."
+            };
+            state.workflowError = "";
+            state.workflowPolling = false;
+            persistWorkflowRecord(id, state.workflowPayload, state.workflow, true);
+            renderWorkflow();
+            return;
+          }
+          // Keep polling this same request ID. A refresh or lost response must never
+          // turn into an accidental second generation.
+          state.busy = true;
+          state.workflowError = "Status connection lost. Forge will keep checking this request.";
+          renderWorkflow();
+          state.workflowTimer = window.setTimeout(tick, 3000);
+        });
+    }
+    if (immediate) tick();
+    else state.workflowTimer = window.setTimeout(tick, 250);
+  }
+
+  function renderWorkflow() {
+    var controller = state.controller;
+    if (!controller || !controller.q) return;
+    var status = controller.q(".forge-workflow-status");
+    var previews = controller.q(".forge-workflow-previews");
+    var review = controller.q(".forge-review-sheet");
+    var cancel = controller.q(".forge-workflow-cancel");
+    var open = controller.q(".forge-workflow-open");
+    var retry = controller.q(".forge-workflow-retry");
+    var workflow = state.workflow;
+    status.textContent = "";
+    cancel.classList.toggle("hidden", !workflow || !isWorkflowActive(workflow.state));
+    open.classList.toggle("hidden", !(workflow && workflow.state === "completed" && workflow.result && workflow.result.png));
+    retry.classList.toggle("hidden", !(workflow && workflow.state === "missing" && state.workflowPayload));
+    controller.q(".forge-generate").disabled = state.busy;
+    if (!workflow) {
+      if (state.workflowError) status.textContent = state.workflowError;
+      else if (state.busy && state.workflowId) status.textContent = "Restoring saved Forge request…";
+      return;
+    }
+    var messages = [];
+    var labels = {
+      starting: "Starting",
+      running: "Working",
+      cancelling: "Cancelling",
+      cancelled: "Cancelled",
+      completed: "Ready for visual review",
+      failed: "Generation failed",
+      interrupted: "Generation was interrupted"
+    };
+    messages.push(labels[workflow.state] || workflow.state || "Workflow status");
+    if (workflow.stage) messages.push("Stage: " + workflow.stage);
+    if (workflow.log) {
+      messages.push(Array.isArray(workflow.log) ? workflow.log.join("\n") : String(workflow.log));
+    }
+    if (state.workflowError) messages.push(state.workflowError);
+    if (state.workflowCancelError) messages.push(state.workflowCancelError);
+    if (workflow.state === "completed") {
+      messages.push("Forge's checks are ready. Please judge the art at 1× and 2×; QA is not artistic approval.");
+    }
+    status.textContent = messages.join("\n");
+    var previewList = (workflow.previews || []).filter(function (preview) {
+      return preview && preview.png;
+    });
+    var previewSignature = JSON.stringify(previewList.map(function (preview) {
+      return [preview.kind || "Preview", preview.png];
+    }));
+    if (previews.getAttribute("data-signature") !== previewSignature) {
+      previews.textContent = "";
+      previewList.forEach(function (preview) {
+        var card = document.createElement("div");
+        card.className = "forge-thumb";
+        var image = document.createElement("img");
+        image.src = preview.png;
+        image.alt = preview.kind || "Generation preview";
+        var label = document.createElement("span");
+        label.textContent = preview.kind || "Preview";
+        card.appendChild(image);
+        card.appendChild(label);
+        previews.appendChild(card);
+      });
+      previews.setAttribute("data-signature", previewSignature);
+    }
+    var result = workflow.result;
+    var reviewUrl = workflow.state === "completed" && result && result.review_png ? result.review_png : "";
+    if (review.getAttribute("data-signature") !== reviewUrl) {
+      review.textContent = "";
+      if (reviewUrl) {
+        var heading = document.createElement("div");
+        heading.className = "forge-help";
+        heading.textContent = "Review sheet · compare at 1× and 2×";
+        var imageCard = document.createElement("div");
+        imageCard.className = "forge-thumb";
+        var sheet = document.createElement("img");
+        sheet.src = reviewUrl;
+        sheet.alt = "Pixel Forge visual review sheet showing the sprite at 1× and 2×";
+        imageCard.appendChild(sheet);
+        review.appendChild(heading);
+        review.appendChild(imageCard);
+      }
+      review.setAttribute("data-signature", reviewUrl);
+    }
+  }
 
   ns.ForgeController.prototype.onTab_ = function (evt) {
     var tab = evt.target.getAttribute("data-forge-tab");
@@ -283,6 +526,121 @@
       });
   };
 
+  ns.ForgeController.prototype.startWorkflow_ = function (prompt) {
+    if (state.busy) {
+      notify("Forge is still working on the previous request");
+      return;
+    }
+    var q = this.q;
+    var width = Number(q(".forge-w").value);
+    var height = Number(q(".forge-h").value);
+    if (!Number.isInteger(width) || width < 16 || width > 512 || !Number.isInteger(height) || height < 16 || height > 512) {
+      notify("Sprite size must be between 16 and 512 pixels in each direction");
+      return;
+    }
+    if (prompt.length > 2000) {
+      notify("Keep the sprite description to 2,000 characters or fewer");
+      return;
+    }
+    var checks = q(".forge-checks").value.split(/\r?\n/).map(function (line) {
+      return line.trim();
+    }).filter(Boolean);
+    if (checks.length > 8) {
+      notify("Use no more than 8 visible checks");
+      return;
+    }
+    if (checks.some(function (check) { return check.length > 500; })) {
+      notify("Keep each visible check to 500 characters or fewer");
+      return;
+    }
+    var requestId = window.crypto && window.crypto.randomUUID
+      ? window.crypto.randomUUID()
+      : "wf-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    state.prefs.mode = "prepare";
+    state.prefs.w = width;
+    state.prefs.h = height;
+    state.prefs.prompt = prompt;
+    state.prefs.checks = checks.join("\n");
+    savePrefs();
+    var payload = {
+      prompt: prompt,
+      width: width,
+      height: height,
+      project: "dead-mall",
+      checks: checks
+    };
+    state.workflowPayload = payload;
+    submitWorkflow(requestId, payload);
+  };
+
+  function responseError(e) {
+    var body = e && e.body;
+    var detail = body && body.error;
+    if (detail && typeof detail === "object") detail = detail.message || detail.code;
+    return String(detail || (e && e.message) || "Request failed");
+  }
+
+  function responseCode(e) {
+    var body = e && e.body;
+    var error = body && body.error;
+    return String((body && body.code) || (error && typeof error === "object" && error.code) || "").toUpperCase();
+  }
+
+  function submitWorkflow(id, payload) {
+    state.workflowId = id;
+    state.workflowPayload = payload;
+    state.workflow = { request_id: id, state: "starting", stage: "Queued", log: [] };
+    state.workflowError = "";
+    state.workflowCancelError = "";
+    state.busy = true;
+    persistWorkflowRecord(id, payload, null, false);
+    renderWorkflow();
+    api("POST", "workflows/prepare", Object.assign({ request_id: id }, payload))
+      .then(function (workflow) {
+        state.workflow = workflow;
+        state.busy = isWorkflowActive(workflow.state);
+        state.workflowError = "";
+        persistWorkflowRecord(id, payload, state.busy ? null : workflow, false);
+        renderWorkflow();
+        if (state.busy) pollWorkflow(id, false);
+      })
+      .catch(function (e) {
+        var code = responseCode(e);
+        var message = responseError(e);
+        if (code === "REQUEST_CONFLICT") {
+          state.busy = false;
+          state.workflow = { request_id: id, state: "failed", log: "Forge found a request ID conflict. Start a fresh request to continue." };
+          state.workflowError = "";
+          persistWorkflowRecord(id, payload, state.workflow, true);
+          renderWorkflow();
+          return;
+        }
+        if (code === "BUSY" || (code !== "REQUEST_CONFLICT" && /\bBUSY\b|another workflow|already running/i.test(message))) {
+          state.busy = false;
+          state.workflow = { request_id: id, state: "failed", log: "Another Forge workflow is already running. Check its progress before starting a new one." };
+          state.workflowError = "";
+          persistWorkflowRecord(id, payload, state.workflow, true);
+          renderWorkflow();
+          return;
+        }
+        if (e.status >= 400 && e.status < 500) {
+          state.busy = false;
+          state.workflow = { request_id: id, state: "failed", log: "Forge could not start this request: " + message };
+          state.workflowError = "";
+          persistWorkflowRecord(id, payload, state.workflow, true);
+          renderWorkflow();
+          return;
+        }
+        // The POST may have reached Forge even when its response was lost. Keep the
+        // same ID and resolve it through GET; never submit a replacement request.
+        state.busy = true;
+        state.workflowError = "Could not confirm the start yet. Forge will check this same request.";
+        persistWorkflowRecord(id, payload, null, false);
+        renderWorkflow();
+        pollWorkflow(id, false);
+      });
+  }
+
   function poll(jobId, target, label) {
     api("GET", "jobs/" + jobId)
       .then(function (j) {
@@ -312,6 +670,10 @@
     var prompt = q(".forge-prompt").value.trim();
     if (!prompt) {
       notify("Describe the sprite first");
+      return;
+    }
+    if (q(".forge-mode").value !== "competition") {
+      this.startWorkflow_(prompt);
       return;
     }
     var p = state.prefs;

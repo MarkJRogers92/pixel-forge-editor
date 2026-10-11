@@ -76,6 +76,84 @@
 .forge-row input[type="number"] {
   width: 56px;
 }
+.forge-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.forge-mode-row label,
+.forge-checks-label {
+  color: #bbb;
+  font-size: 11px;
+}
+.forge-mode-row select {
+  flex: 1;
+}
+.forge-prepare-checks textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  margin-top: 3px;
+}
+.forge-prepare-help p {
+  margin-bottom: 5px;
+}
+.forge-workflow-status {
+  margin-top: 8px;
+  color: #ddd;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.forge-workflow-previews,
+.forge-review-sheet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.forge-workflow-previews:empty,
+.forge-review-sheet:empty {
+  display: none;
+}
+.forge-workflow-previews .forge-thumb,
+.forge-review-sheet .forge-thumb {
+  cursor: default;
+}
+.forge-workflow-previews img,
+.forge-review-sheet img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: repeating-conic-gradient(#555 0% 25%, #444 0% 50%) 50% / 12px 12px;
+  border: 1px solid #555;
+}
+.forge-review-sheet img {
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+  object-fit: contain;
+  object-position: left top;
+}
+.forge-workflow-open,
+.forge-workflow-cancel {
+  width: 100%;
+  margin-top: 6px;
+}
+.forge-mode-prepare .forge-competition-options,
+.forge-mode-prepare .forge-model-help {
+  display: none;
+}
+.forge-mode-competition .forge-prepare-help,
+.forge-mode-competition .forge-prepare-checks,
+.forge-mode-competition .forge-fixed-style {
+  display: none;
+}
+.forge-workflow-retry {
+  width: 100%;
+  margin-top: 6px;
+}
 .forge-help {
   color: #aaa;
   font-size: 12px;
